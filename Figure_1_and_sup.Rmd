@@ -282,28 +282,40 @@ ggplot() +
 ```{r FigS1B clone5 heatmap Christ, fig.height=6, fig.width=8}
 clones_barcodes = pull(domain_dt, barcode)
 
-chip.matrix = chip.dt %>% column_to_rownames(., var = "ID") %>% t()
+chip.matrix = chip_dt %>% column_to_rownames(., var = "ID") %>% t()
 
-clones_domains.df = as.data.frame(domain_dt[, c("barcode", "ID", "IPR", "group")])
-row.names(clones_domains.df) = clones_domains.df$IPR
+clones_domains.df = as.data.frame(domain_dt[, c("barcode", "group")])
+colnames(clones_domains.df) = c("ID", "group")
 
-chip_clones = chip.dt[clones_domains.df, on = c("ID")]
+clones_domains.df$IPR = paste0("IPR", seq(1:dim(clones_domains.df)[1]))
+rownames(clones_domains.df) = clones_domains.df$IPR
 
-row.names(clones_domains.df) <- clones_domains.df$IPR
+chip_clones = chip_dt[clones_domains.df, on = c("ID")]
+
+
 clones_domains.df = clones_domains.df[, "group", drop = FALSE]
 colnames(clones_domains.df) = "domain"
 
-clustering = data.frame(row.names=c('LMNB1', 'late_replicating', 'H3K9me2', 'H3K9me3',
-                                    'H3K27me3', 'EZH2', 'CTCF', 'SMC3',
-                                    'HDAC3', 'HDAC2', 'HDAC1', 'H3K4me1',
-                                    'H3K4me2', 'H3K4me3', 'H3K27ac',
-                                    'H4K5acK8ac', 'H2AFZ', 'DNAse', 'Dam', 'm5C',
-                                    'H3K79me2', 'TTseq', 'H3K36me3', 'POL2AS2',
+clustering = data.frame(row.names=c(#'LMNB1', 'late_replicating', 
+                                    'H3K9me2', 'H3K9me3',
+                                    'H3K27me3', 'EZH2', 
+                                    'CTCF', 'SMC3',
+                                    'HDAC3', 'HDAC2', 'HDAC1', 
+                                    'H3K4me1', 'H3K4me2', 'H3K4me3', 'H3K27ac',
+                                    'H4K5acK8ac', 'H2AFZ', 
+                                    #'DNAse', 'Dam', 'm5C',
+                                    'H3K79me2', 
+                                    #'TTseq', 
+                                    'H3K36me3', 'POL2AS2',
                                     'POL2'),
-                        group=factor(c(rep('repressive', 6), rep('insulator', 2),
-                                       rep('HDAC', 3), rep('euchromatin', 6),
-                                       rep('accessibility', 2), 'methylation',
-                                       rep('transcribing', 5)),
+                        group=factor(c(#rep('repressive', 6), 
+                                       rep('repressive', 4), 
+                                       rep('insulator', 2),
+                                       rep('HDAC', 3), 
+                                       rep('euchromatin', 6),
+                                       # rep('accessibility', 2), 'methylation',
+                                       # rep('transcribing', 5),
+                                       rep('transcribing', 4)),
                                      levels=c('transcribing', 'accessibility',
                                               'methylation', 'euchromatin',
                                               'HDAC', 'insulator', 'repressive')))
@@ -311,43 +323,32 @@ feature_fill = c(insulator="#a6b5a3", repressive="#304441", euchromatin="#cda4cc
                  transcribing="#FBB040", HDAC="#aac9e0", accessibility='#cebc85',
                  methylation='#7dc98f')
 
-chom_df = chip.dt %>% column_to_rownames(ID)
-colnames(chom_df) = chip_clones$IPR
+chom_df = chip_clones %>% column_to_rownames("IPR") %>% select(-group, -ID) %>% t()
 
 order_vec=rownames(clustering)[nrow(clustering):1]
 
 ### Colors
-quant_breaks <- quantile(chip.matrix, c(.01,.99), na.rm = T) # change these numbers according to where you want to set the cutoff
+quant_breaks <- quantile(chom_df, c(.01,.99), na.rm = T) # change these numbers according to where you want to set the cutoff
 palette_length <- 100
 max_quant = max(abs(quant_breaks[1]), abs(quant_breaks[2]))
 
-palette_length <- 100
-breaks <- c(seq(-quant_breaks[2], 0, length.out=ceiling(palette_length/2) + 1), 
+breaks.chip <- c(seq(-quant_breaks[2], 0, length.out=ceiling(palette_length/2) + 1), 
             seq(quant_breaks[2]/palette_length, quant_breaks[2], length.out=floor(palette_length/2)))
 
 
 colors = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(palette_length)
 
-colors_plus = 
-
-slope.colors <- tibble(color = c("#8c510a", "#f5f5f5","#01665e"),
-                       label = c("negative","none","positive"), 
-                       feature = "z-score")
-
-colors = colorRampPalette(slope.colors %>% pull(color))(length(breaks))
-# colors[-which(breaks < -1.96 | breaks > 1.96 )] = "gray90"
-
-paletteLength <- 50
-myColor <- colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(paletteLength)
-# length(breaks) == length(paletteLength) + 1
-# use floor and ceiling to deal with even/odd length pallettelengths
-myBreaks <- c(seq(min(test), 0, length.out=ceiling(paletteLength/2) + 1), 
-              seq(max(test)/paletteLength, max(test), length.out=floor(paletteLength/2)))
+# paletteLength <- 50
+# myColor <- colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(paletteLength)
+# # length(breaks) == length(paletteLength) + 1
+# # use floor and ceiling to deal with even/odd length pallettelengths
+# myBreaks <- c(seq(min(test), 0, length.out=ceiling(paletteLength/2) + 1), 
+#               seq(max(test)/paletteLength, max(test), length.out=floor(paletteLength/2)))
 
 
-pheatmap(chom_df[order_vec,], cluster_rows=F, annotation_row=clustering,
+pheatmap(chom_df, annotation_row=clustering,
          annotation_colors=list(group=feature_fill),
-         color = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(100),
+         color = colors, breaks = breaks.chip,
          annotation_col = clones_domains.df)
 ```
 <!-- end Christ -->
