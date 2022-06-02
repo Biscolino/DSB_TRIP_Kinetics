@@ -1,0 +1,430 @@
+---
+title: "Figure 2 and supplemental 1-2"
+author: "Ruben Schep"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output:
+  html_document:
+    theme: journal #cerulean
+    highlight: monochrome
+    toc: true
+    toc_float: true
+    code_folding: show
+  editor_options:
+    chunk_output_type: console
+---
+
+# knitr document van Steensel lab
+```{r}
+StartTime <-Sys.time()
+Date <- substr(gsub("-","",Sys.time()),1,8)
+library(knitr)
+
+## Select outdir
+out.dir = paste0("figures/rs", Date, "/")
+dir.create(out.dir)
+opts_chunk$set(dev=c('png', 'pdf'), fig.path = file.path(out.dir))
+pdf.options(useDingbats = FALSE)
+```
+
+# Introduction
+
+## Description of Data
+
+# Data processing
+
+## Path, Libraries, Parameters and Useful Functions
+
+```{r setup, message=FALSE, warnings=FALSE}
+# 6-digit Date tag:
+Date <- substr(gsub("-","",Sys.time()),3,8)
+
+# libraries:
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+library(ggrastr)
+library(reshape)
+library(reshape2)
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(GGally)
+library(ggpmisc)
+library(pheatmap)
+library(RColorBrewer)
+library(broom)
+library(report)
+
+
+in.dir.date = 20210311
+in.dir = paste0("/DATA/projects/DSBrepair/data/R/rs", in.dir.date, "/")
+
+
+# Color codes
+colore <- c("wt" = "#808184", "other" = "black", "NHEJ" = "#e1251b", "MMEJ" = "#26419a", "SSTR" = "#007A4C")
+colores <- c("wt" = "#808184", "other" = "black", "NHEJ" = "#e1251b", "MMEJ" = "#26419a", "SSTR" = "#007A4C")
+colori  <- c("other_indels" = "black", "NHEJ" = "#e1251b", "MMEJ" = "#26419a", "SSTR" = "#007A4C") 
+colora <- c("0" = "#808184", "1" = "#e1251b", "-7" = "#26419a", "ssODN" = "#007A4C") 
+
+DNA_color = c('MMEJ'="#414691", 'ins'="#d3422e", 'wt'="#000000", 'broken'='grey50',
+              'nonMMEJ_del'="#8BA6A5", 'SSTR'="#A9AB2E", 'mut'='#7BA68E',
+              'active_MMEJ'='#414691', 'mut_active'='#414691', 'cas9'='#A9AB2E')
+
+k_color = c('kc_cut'="#000000", 'kr_perfect'="#BBABB1", 'kr_ins'="#d3422e",
+            'kr_MMEJ_min'="#414691", 'kr_MMEJ_max'="#414691", 'kr_MMEJ'="#414691",
+            'kr_nonMMEJ'="#8BA6A5", 'kr_SSTR'="#A9AB2E", 'kr_mut'='#7BA68E')
+
+condition_color = c('DMSO'='#000000', 'M3814'='#d0d0d0')
+ssODN_color = c('FALSE'='#000000', 'TRUE'='#A9AB2E')
+
+## Chromatin groups
+group_colors=c('late_replicating-LAD-H3K9me2'='#4477AA',
+               "H3K9me2"='#6D92A2',
+               "late_replicating-LAD-H3K9me2-H3K27me3"='#6D92A2',
+               "LAD-H3K9me2-H3K27me3"='#6D92A2',
+               "LAD-H3K9me2"='#6D92A2',
+               "late_replicating"='#6D92A2',
+               "late_replicating-H3K9me2"='#6D92A2',
+               "H3K9me2-H3K27me3"='#6D92A2',
+               'H3K27me3'='#66CCEE',
+               'transcription'='#228833',
+               'euchromatin-transcription'='#CCBB44',
+               "transcription-late_replicating-LAD-H3K9me2"="#37868A",
+               "euchromatin-H3K9me2"="#74555F",
+               "euchromatin-transcription-late_replicating"="#74555F",
+               'euchromatin'='#EE6677',
+               "transcription-LAD-H3K9me2"="#37868A",
+               'unmarked'='#BBBBBB')
+
+main_groups = c('euchromatin', 'euchromatin-transcription', 'transcription',
+                'unmarked', 'H3K27me3', 'late_replicating-LAD-H3K9me2')
+main_group_colors=group_colors[main_groups]
+```
+
+## Custom functions
+Functions used thoughout this script.
+```{r, message=FALSE, warnings=FALSE}
+changeLevels <- function(object, column = "chr_r", levels = c(paste0("chr", 1:22), "chrX")) {
+  object[, column] <- as.character(object[, column])
+  object[, column] <- factor(object[, column], levels)
+  object
+}
+```
+
+# Data import
+```{r, message=FALSE, warnings=FALSE}
+clone_dt = fread('/DATA/projects/DSBrepair/data/cl20220321_cured_mapping_clones.txt',
+                 col.names=c('seqnames', 'pos', 'barcode', 'clone'))
+
+chip_dt = fread('/DATA/projects/DSBrepair/results/R/cl20220322_zscores_chip_clone_set.txt') %>% 
+  filter(pool == "clone_set")  %>%
+  select(-pool, -binsize) # chip.dt = chip.dt[, H3K9me3 := NULL]
+
+setkey(clone_dt, 'barcode')
+
+domain_dt = readRDS('/DATA/projects/DSBrepair/data/R/cl20220322_clones_chip_domains.RDS')
+
+pathway_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220322_timeseries_pools_74set.txt')
+pathway_dt[, used:=ifelse(time<50, 1, 0.3)]
+pathway_dt[, group:=domain_dt[barcode,'group']]
+pathway_dt[is.na(group), group:='unmarked']
+
+endseq_scaled = fread(paste0('/DATA/projects/DSBrepair/data/R/',
+                             'cl20220530_scaled_endseq_ratios.tsv'),
+                      sep='\t')
+endseq_scaled[,group:=domain_dt[barcode, 'group']]
+endseq_dt = fread(paste0('/DATA/projects/DSBrepair/data/R/',
+                         'cl20220517_corrected_broken_fraction_endseq.txt'))
+
+endseq_clone5 = fread(paste0('/DATA/projects/DSBrepair/data/R/',
+                            'cl20220525_endseq_clone5_12h.txt'))
+
+rel_bc_count = pathway_dt[, list(count=sum(count)),
+                          by=c('barcode', 'clone', 'bio', 'tech', 'condition',
+                               'time', 'ssODN', 'used')]
+
+rel_bc_count[, rel:=count/sum(count),
+             by=c('clone', 'bio', 'tech', 'condition', 'time', 'ssODN')]
+
+rel_bc_count[, rel_broken:=rel/rel[time==0],
+             by=c('barcode', 'clone', 'bio', 'tech', 'condition', 'ssODN')]
+
+
+pathway_dt[, mean_diff := ratio-mean(ratio),
+           by=c('barcode', 'clone', 'pool', 'bio', 'condition', 'ssODN',
+                'group', 'pathway', 'time')]
+
+rel_bc_count[, mean_diff := rel_broken-mean(rel_broken),
+             by=c('barcode', 'clone', 'bio', 'condition', 'ssODN', 'time')]
+
+
+pathway_sd = pathway_dt[time <= 48 & condition=='M3814',
+                        list('sd_pathway'=sd(mean_diff)),
+                        by='clone']
+relative_sd = rel_bc_count[time <= 30 & condition=='M3814',
+                           list('sd_relative'=sd(mean_diff)),
+                           by='clone']
+
+pathway_sd = pathway_dt[time <= 48 & condition=='M3814' & ssODN==T,
+                       list('sd_pathway'=sd(mean_diff)),
+                       by='barcode']
+relative_sd = rel_bc_count[time <= 30 & condition=='M3814' & ssODN==T,
+                          list('sd_relative'=sd(mean_diff)),
+                          by='barcode']
+
+sd_merge = merge(pathway_sd, relative_sd, by='barcode')
+sd_merge[,scaling_factor := sd_pathway/sd_relative]
+
+
+
+pathway_sd = pathway_dt[time <= 48, sd(mean_diff)]
+relative_sd = rel_bc_count[time <= 30, sd(mean_diff)]
+
+print(pathway_sd/relative_sd)
+
+pathway_sd = pathway_dt[time <= 48 & condition=='M3814', sd(mean_diff)]
+relative_sd = rel_bc_count[time <= 30 & condition=='M3814', sd(mean_diff)]
+
+print(pathway_sd/relative_sd)
+
+pathway_sd = pathway_dt[time <= 48 & condition=='DMSO', sd(mean_diff)]
+relative_sd = rel_bc_count[time <= 30 & condition=='DMSO', sd(mean_diff)]
+
+print(pathway_sd/relative_sd)
+kable(sd_merge)
+
+sd_merge[, group:=domain_dt[barcode,'group']]
+
+
+
+
+main_sd_merge = sd_merge[group%in%main_groups, ]
+main_sd_merge[, group:=factor(group, levels=main_groups)]
+
+
+map_clones = read_table("/DATA/projects/DSBrepair/data/cl20220321_cured_mapping_clones.txt", col_names = c("chr", "start", "barcode", "clone")) %>%
+  filter(chr != "chrY") %>%
+  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
+                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
+                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
+                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
+                                      "chr22", "chrX")))
+  
+chromsizes = read_table("/DATA/projects/DSBrepair/data/rs20220602_chromsizes_hg38_UCSC.txt", col_names = T) %>% 
+  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
+                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
+                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
+                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
+                                      "chr22", "chrX")))
+
+```
+
+
+## Data processing
+```{r preprocess experiments}
+
+```
+
+```{r}
+```
+
+# Main Figure 1
+## Panel 1A
+```{r Fig1A chromosome ideogram, fig.height=6, fig.width=8}
+
+```
+
+### Figure legend
+*(a)* Chromosome maps of the mapped IPR locations of both pools that passed the mutagenesis assay cutoff. 
+
+## Panel 1B
+```{r Fig1B individual barcodes, fig.height=5, fig.width=7}
+
+```
+### Figure Legend
+
+*(c)* 
+
+## Panel 1C
+```{r Fig1C indel spectra, fig.height=6, fig.width=10}
+
+```
+
+### Figure legend 
+
+*(b)* 
+
+
+ 
+
+# Supplementary Figure 1
+
+## Panel S1A
+```{r FigS1A chromideograms, fig.height=11, fig.width=6}
+ggplot() +
+  geom_segment(data = chromsizes,
+               aes(x = chr, xend = chr, y = 0, yend = start),
+               lineend = "round", color = "lightgrey", size = 7) +
+  geom_segment(data = map_clones,
+               aes(x = as.integer(chr) - 0.3, xend = as.integer(chr) + 0.3,
+                   y = start, yend = start, color = clone),
+               size = .8) +
+  theme_classic(base_size = 16) +
+  scale_color_manual(values = c("RSTP2_1" = '#014040', "RSTP2_3" = '#02735E',"RSTP2_5" = '#03A678',
+                     "RSTP2_9" = '#ffad07',"RSTP2_12" = '#f27005',"RSTP2_15" = '#ce3800',"RSTP2_16" = '#731702')) + 
+  xlab("Chromosome")
+```
+### Figure Legend
+*(a)* Chromosome maps of the uniquely mapped IPR locations per clone.
+
+## Panel S1B
+<!-- start Christ -->
+```{r FigS1B clone5 heatmap Christ, fig.height=6, fig.width=8}
+clones_barcodes = pull(domain_dt, barcode)
+
+chip.matrix = chip.dt %>% column_to_rownames(., var = "ID") %>% t()
+
+clones_domains.df = as.data.frame(domain_dt[, c("barcode", "ID", "IPR", "group")])
+row.names(clones_domains.df) = clones_domains.df$IPR
+
+chip_clones = chip.dt[clones_domains.df, on = c("ID")]
+
+row.names(clones_domains.df) <- clones_domains.df$IPR
+clones_domains.df = clones_domains.df[, "group", drop = FALSE]
+colnames(clones_domains.df) = "domain"
+
+clustering = data.frame(row.names=c('LMNB1', 'late_replicating', 'H3K9me2', 'H3K9me3',
+                                    'H3K27me3', 'EZH2', 'CTCF', 'SMC3',
+                                    'HDAC3', 'HDAC2', 'HDAC1', 'H3K4me1',
+                                    'H3K4me2', 'H3K4me3', 'H3K27ac',
+                                    'H4K5acK8ac', 'H2AFZ', 'DNAse', 'Dam', 'm5C',
+                                    'H3K79me2', 'TTseq', 'H3K36me3', 'POL2AS2',
+                                    'POL2'),
+                        group=factor(c(rep('repressive', 6), rep('insulator', 2),
+                                       rep('HDAC', 3), rep('euchromatin', 6),
+                                       rep('accessibility', 2), 'methylation',
+                                       rep('transcribing', 5)),
+                                     levels=c('transcribing', 'accessibility',
+                                              'methylation', 'euchromatin',
+                                              'HDAC', 'insulator', 'repressive')))
+feature_fill = c(insulator="#a6b5a3", repressive="#304441", euchromatin="#cda4cc",
+                 transcribing="#FBB040", HDAC="#aac9e0", accessibility='#cebc85',
+                 methylation='#7dc98f')
+
+chom_df = chip.dt %>% column_to_rownames(ID)
+colnames(chom_df) = chip_clones$IPR
+
+order_vec=rownames(clustering)[nrow(clustering):1]
+
+### Colors
+quant_breaks <- quantile(chip.matrix, c(.01,.99), na.rm = T) # change these numbers according to where you want to set the cutoff
+palette_length <- 100
+max_quant = max(abs(quant_breaks[1]), abs(quant_breaks[2]))
+
+palette_length <- 100
+breaks <- c(seq(-quant_breaks[2], 0, length.out=ceiling(palette_length/2) + 1), 
+            seq(quant_breaks[2]/palette_length, quant_breaks[2], length.out=floor(palette_length/2)))
+
+
+colors = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(palette_length)
+
+colors_plus = 
+
+slope.colors <- tibble(color = c("#8c510a", "#f5f5f5","#01665e"),
+                       label = c("negative","none","positive"), 
+                       feature = "z-score")
+
+colors = colorRampPalette(slope.colors %>% pull(color))(length(breaks))
+# colors[-which(breaks < -1.96 | breaks > 1.96 )] = "gray90"
+
+paletteLength <- 50
+myColor <- colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(paletteLength)
+# length(breaks) == length(paletteLength) + 1
+# use floor and ceiling to deal with even/odd length pallettelengths
+myBreaks <- c(seq(min(test), 0, length.out=ceiling(paletteLength/2) + 1), 
+              seq(max(test)/paletteLength, max(test), length.out=floor(paletteLength/2)))
+
+
+pheatmap(chom_df[order_vec,], cluster_rows=F, annotation_row=clustering,
+         annotation_colors=list(group=feature_fill),
+         color = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(100),
+         annotation_col = clones_domains.df)
+```
+<!-- end Christ -->
+### Figure Legend
+*(B)* Heatmap of the Z-scores of the chromatin features for each IPR in clone5. Z-scores were calculated using the ChIP signals for all the IPRs in the pool. IPRs were clusterd based on the z-scores. IPR numbering is unrelated to figure (2c).  
+
+## Panel S1C
+```{r FigS1C all indels, fig.height=5, fig.width=12}
+
+```
+
+
+### Figure legend
+*(C)* 
+
+## Panel S1D
+```{r FigS1D indel spectra seperate pools, fig.height=4, fig.width=12}
+
+```
+
+### Figure legend
+*(D)* 
+
+
+## Panel S2E
+```{r FigS2E correlation between replicates, fig.height=5, fig.width=6}
+pathway_pairs = pathway_dt %>% 
+  group_by(barcode, time, condition, pathway, bio, ssODN, clone) %>% 
+  distinct(ratio, barcode, time, condition, pathway, bio, ssODN, clone) %>%
+  summarise(av.ratio = sum(ratio)/4) %>% 
+  dplyr::distinct() %>%  
+  pivot_wider(., names_from = bio, values_from = av.ratio) %>%
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  unite(condition, condition, ssODN)
+
+
+pdf('/DATA/projects/DSBrepair/scratch/rs20220602_correlations.pdf', width=10, height=10)
+for (i in unique(pathway_pairs$condition)) {
+  if(grepl("FALSE", i)) {
+    d = pathway_pairs %>% 
+      filter(condition == i & time < 50 & pathway != "SSTR")
+    p = ggpairs(d, columns = 6:8, ggplot2::aes(colour=pathway), title = i) + 
+            scale_fill_manual("legend", values = DNA_color) +
+            scale_color_manual("legend", values = DNA_color) +
+            theme_bw(base_size = 16)
+    print(p)
+    # p.rast = rasterize(p, layers='Point', dpi=300)
+    # print(p.rast)
+
+  } else {
+    d.sstr = pathway_pairs %>% 
+      filter(condition == i & time < 50)
+    p = ggpairs(d.sstr, columns = 6:8, ggplot2::aes(colour=pathway), title = i) + 
+            scale_fill_manual("legend", values = DNA_color) +
+            scale_color_manual("legend", values = DNA_color)+
+            theme_bw(base_size = 16)
+    print(p)
+    # p.rast = rasterize(p, layers='Point', dpi=300)
+    # print(p.rast)
+  }
+}
+dev.off()
+```
+
+### Figure legend
+*(E)* ) 
+
+# Bibliography
+```{r citations}
+cite_packages()
+```
+
+
+# Session Info
+```{r}
+paste("Run time: ",format(Sys.time()-StartTime))
+getwd()
+date()
+sessionInfo()
+```
