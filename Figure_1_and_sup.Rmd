@@ -53,6 +53,8 @@ library(ggpmisc)
 library(pheatmap)
 library(RColorBrewer)
 library(broom)
+library(ggh4x)
+library(magrittr)
 library(report)
 
 
@@ -90,6 +92,7 @@ group_colors=c('late_replicating-LAD-H3K9me2'='#4477AA',
                'transcription'='#228833',
                'euchromatin-transcription'='#CCBB44',
                "transcription-late_replicating-LAD-H3K9me2"="#37868A",
+               "euchromatin-H3K27me3"="#74555F", 
                "euchromatin-H3K9me2"="#74555F",
                "euchromatin-transcription-late_replicating"="#74555F",
                'euchromatin'='#EE6677',
@@ -124,7 +127,7 @@ setkey(clone_dt, 'barcode')
 
 domain_dt = readRDS('/DATA/projects/DSBrepair/data/R/cl20220322_clones_chip_domains.RDS')
 
-pathway_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220322_timeseries_pools_74set.txt')
+pathway_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220329_timeseries_pools_73set.txt')
 pathway_dt[, used:=ifelse(time<50, 1, 0.3)]
 pathway_dt[, group:=domain_dt[barcode,'group']]
 pathway_dt[is.na(group), group:='unmarked']
@@ -261,7 +264,7 @@ chromsizes = read_table("/DATA/projects/DSBrepair/data/rs20220602_chromsizes_hg3
 
 ## Panel S1A
 ```{r FigS1A chromideograms, fig.height=11, fig.width=6}
-ggplot() +
+p = ggplot() +
   geom_segment(data = chromsizes,
                aes(x = chr, xend = chr, y = 0, yend = start),
                lineend = "round", color = "lightgrey", size = 7) +
@@ -273,6 +276,10 @@ ggplot() +
   scale_color_manual(values = c("RSTP2_1" = '#014040', "RSTP2_3" = '#02735E',"RSTP2_5" = '#03A678',
                      "RSTP2_9" = '#ffad07',"RSTP2_12" = '#f27005',"RSTP2_15" = '#ce3800',"RSTP2_16" = '#731702')) + 
   xlab("Chromosome")
+
+pdf('/DATA/projects/DSBrepair/scratch/rs20220602_mapping.pdf', width=10, height=8)
+print(p)
+dev.off()
 ```
 ### Figure Legend
 *(a)* Chromosome maps of the uniquely mapped IPR locations per clone.
@@ -280,11 +287,11 @@ ggplot() +
 ## Panel S1B
 <!-- start Christ -->
 ```{r FigS1B clone5 heatmap Christ, fig.height=6, fig.width=8}
-clones_barcodes = pull(domain_dt, barcode)
+clones_barcodes = pull(pathway_dt, barcode) %>% unique()
 
-chip.matrix = chip_dt %>% column_to_rownames(., var = "ID") %>% t()
+chip.matrix = chip_dt %>% filter(ID %in% clones_barcodes) %>% column_to_rownames(., var = "ID") %>% t()
 
-clones_domains.df = as.data.frame(domain_dt[, c("barcode", "group")])
+clones_domains.df = as.data.frame(domain_dt[, c("barcode", "group")]) %>% filter(barcode %in% clones_barcodes)
 colnames(clones_domains.df) = c("ID", "group")
 
 clones_domains.df$IPR = paste0("IPR", seq(1:dim(clones_domains.df)[1]))
@@ -345,11 +352,15 @@ colors = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(palette_length)
 # myBreaks <- c(seq(min(test), 0, length.out=ceiling(paletteLength/2) + 1), 
 #               seq(max(test)/paletteLength, max(test), length.out=floor(paletteLength/2)))
 
+pheatmap(chom_df, color = colors, breaks = breaks.chip, annotation_row=clustering)
 
+pdf('/DATA/projects/DSBrepair/scratch/rs20220602_heatmap.pdf', width=14, height=8)
 pheatmap(chom_df, annotation_row=clustering,
-         annotation_colors=list(group=feature_fill),
+         annotation_colors=list(domain=group_colors, group=feature_fill),
          color = colors, breaks = breaks.chip,
          annotation_col = clones_domains.df)
+dev.off()
+
 ```
 <!-- end Christ -->
 ### Figure Legend
@@ -366,7 +377,25 @@ pheatmap(chom_df, annotation_row=clustering,
 
 ## Panel S1D
 ```{r FigS1D indel spectra seperate pools, fig.height=4, fig.width=12}
+pathway_dt[bio=='E1601', bio:=1]
+pathway_dt[bio=='E1609', bio:=2]
+pathway_dt[bio=='E1626', bio:=3]
 
+sd_dt = pathway_dt[, list(sd=sd(ratio)),
+                   by=c('pathway', 'ssODN', 'pool', 'barcode','bio','condition','time')]
+
+sd_dt %<>% replace_na(list(sd = 0))
+
+pdf('/DATA/projects/DSBrepair/scratch/rs20220603_sd_tech_rep.pdf', useDingbats=F, width=5, height=10)
+ggplot(sd_dt,
+           aes(x=time, y=sd, color=pathway)) +
+           geom_point() +
+           geom_smooth(se=F) +
+           geom_vline(xintercept=48) +
+           theme_bw() +
+           scale_color_manual(values=DNA_color) +
+           facet_nested(rows=vars(ssODN, condition))
+dev.off()
 ```
 
 ### Figure legend
