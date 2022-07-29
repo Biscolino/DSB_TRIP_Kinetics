@@ -79,6 +79,22 @@ k_color = c('kc_cut'="#000000", 'kr_perfect'="#BBABB1", 'kr_ins'="#d3422e",
 condition_color = c('DMSO'='#000000', 'M3814'='#d0d0d0')
 ssODN_color = c('FALSE'='#000000', 'TRUE'='#A9AB2E')
 
+# Clone color code
+col_all_7_clones = values = c("RSTP2_1" = '#014040', 
+                              "RSTP2_3" = '#02735E',
+                              "RSTP2_5" = '#03A678',
+                              "RSTP2_9" = '#ffad07',
+                              "RSTP2_12" = '#f27005',
+                              "RSTP2_15" = '#ce3800',
+                              "RSTP2_16" = '#731702')
+
+col_set_6_clones = values = c("RSTP2_1" = '#026150', 
+                              "RSTP2_5" = '#039851',
+                              "RSTP2_9" = '#04CC50',
+                              "RSTP2_12" = '#FF9B07',
+                              "RSTP2_15" = '#CA6C04',
+                              "RSTP2_16" = '#9A3900')
+
 ## Chromatin groups
 group_colors=c('late_replicating-LAD-H3K9me2'='#4477AA',
                "H3K9me2"='#6D92A2',
@@ -102,6 +118,40 @@ group_colors=c('late_replicating-LAD-H3K9me2'='#4477AA',
 main_groups = c('euchromatin', 'euchromatin-transcription', 'transcription',
                 'unmarked', 'H3K27me3', 'late_replicating-LAD-H3K9me2')
 main_group_colors=group_colors[main_groups]
+
+color_gradient=c("#f94144", "#f3722c", "#f8961e", "#f9c74f", "#90be6d",
+                 "#43aa8b", "#577590")
+# Smaller chromatin group colors
+group2_colors=c('euchromatin'='#EE6677',
+                'transcription'='#228833',
+                "mixed_chromatin"="#74555F",
+                'unmarked'='#BBBBBB',
+                "other"='#BBBBBB',
+                'H3K27me3'='#66CCEE',
+                "other_heterochromatin"='#6D92A2',
+                'triple_heterochromatin'='#4477AA')
+
+main_groups2 = c("euchromatin", 'transcription', 'unmarked',
+                 'H3K27me3', "triple_heterochromatin")
+main_group2_colors=group2_colors[main_groups2]
+
+
+main_groups3 = c("euchromatin", 'transcription', 'other',
+                 'H3K27me3', "triple_heterochromatin")
+main_group3_colors=group2_colors[main_groups3]
+
+main_groups = c('euchromatin', 'transcription',
+                'unmarked', 'H3K27me3', 'late_replicating-LAD-H3K9me2')
+main_group_colors=group_colors[main_groups]
+
+feature_fill = c(insulator="#a6b5a3", repressive="#304441", euchromatin="#cda4cc",
+                 transcribing="#FBB040", HDAC="#aac9e0", accessibility='#cebc85',
+                 methylation='#7dc98f')
+
+col_group_clones = list(clone = col_set_6_clones,
+                        domain = group2_colors, 
+                        group = feature_fill)
+
 ```
 
 ## Custom functions
@@ -115,19 +165,97 @@ changeLevels <- function(object, column = "chr_r", levels = c(paste0("chr", 1:22
 ```
 
 # Data import
-```{r, message=FALSE, warnings=FALSE}
+
+### Chromosome and chromatin data
+```{r chromosome data and mapping, message=FALSE, warnings=FALSE}
+map_clones = read_table("/DATA/projects/DSBrepair/data/cl20220321_cured_mapping_clones.txt", col_names = c("chr", "start", "barcode", "clone")) %>%
+  filter(chr != "chrY") %>%
+  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
+                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
+                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
+                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
+                                      "chr21", "chr22", "chrX")),
+         start = start / 1e6)
+
+chromsizes = read_table("/DATA/projects/DSBrepair/data/rs20220602_chromsizes_hg38_UCSC.txt", col_names = T) %>% 
+  filter(chr != "chrY") %>%
+  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
+                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
+                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
+                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
+                                      "chr21", "chr22", "chrX")),
+         start = start / 1e6)
+
+centromeres = read_table("/DATA/projects/DSBrepair/git/EpiScreen/rs20220714_UCSC_centromeres_24501022.txt") %>%
+  group_by(chr) %>%
+  filter(chr != "chrY") %>%
+  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
+                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
+                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
+                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
+                                      "chr21", "chr22", "chrX")),
+         start = start / 1e6,
+         end = end / 1e6) %>%
+  summarise(start = min(start), # earliest start of centromere
+            end = max(end)) # furthest end of centromere
+
+setnames(centromeres, old = c("start", "end"), new = c("cen_start", "cen_end"))
+
+chrom_sizes = chromsizes %>% left_join(centromeres)
+```
+
+### Chromatin data
+```{r chromatin data, message=FALSE, warnings=FALSE}
+# Set Clone list
 clone_dt = fread('/DATA/projects/DSBrepair/data/cl20220321_cured_mapping_clones.txt',
                  col.names=c('seqnames', 'pos', 'barcode', 'clone'))
 
-chip_dt = fread('/DATA/projects/DSBrepair/results/R/cl20220322_zscores_chip_clone_set.txt') %>% 
-  filter(pool == "clone_set")  %>%
-  select(-pool, -binsize) # chip.dt = chip.dt[, H3K9me3 := NULL]
-
 setkey(clone_dt, 'barcode')
 
+chip_dt = fread('/DATA/projects/DSBrepair/results/R/cl20220322_zscores_chip_clone_set.txt') %>% 
+  filter(pool == "clone_set")  %>%
+  select(-pool, -binsize) 
+
+setkey(chip_dt, 'ID')
+
+# Load Lmnb1 DamID data
+LMNB1_dt = fread('/DATA/projects/DSBrepair/data/tracks_20220321_cured/dam/clone_set-2000_LMNB1.txt',
+                 key='name')
+setnames(LMNB1_dt, c("name", "z_score"), c("ID", "LMNB1"))
+LMNB1_dt = LMNB1_dt[, c("ID" , "LMNB1")]
+
+chip_LMNB1_dt = merge(chip_dt, LMNB1_dt)
+
+# Read domain data for all the clones
 domain_dt = readRDS('/DATA/projects/DSBrepair/data/R/cl20220322_clones_chip_domains.RDS')
 
-pathway_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220329_timeseries_pools_73set.txt')
+domain_dt[,group2:=group]
+domain_dt[group=='euchromatin-transcription', group2:='euchromatin']
+
+domain_dt[grepl('transcription', group2) & group!='transcription',
+          group2:='mixed_chromatin']
+
+domain_dt[grepl('euchromatin', group2) & group2!='euchromatin',
+          group2:='mixed_chromatin']
+
+domain_dt[group%in%c('late_replicating-LAD-H3K9me2',
+                     'late_replicating-LAD-H3K9me2-H3K27me3'),
+          group2:='triple_heterochromatin']
+
+domain_dt[grep('H3K27me3', group2), group2:='H3K27me3']
+domain_dt[!group2%in%names(group2_colors), group2:='other_heterochromatin'] 
+```
+
+
+## simple dt and loesss
+```{r}
+simple_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220622_timeseries_pools_73set_simple.txt')
+```
+
+
+### Indel data
+```{r load indel data, message=FALSE, warnings=FALSE}
+pathway_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220622_timeseries_pools_59set.txt')
 pathway_dt[, used:=ifelse(time<50, 1, 0.3)]
 pathway_dt[, group:=domain_dt[barcode,'group']]
 pathway_dt[is.na(group), group:='unmarked']
@@ -136,11 +264,14 @@ endseq_scaled = fread(paste0('/DATA/projects/DSBrepair/data/R/',
                              'cl20220530_scaled_endseq_ratios.tsv'),
                       sep='\t')
 endseq_scaled[,group:=domain_dt[barcode, 'group']]
+endseq_scaled[, pathway:='broken']
 endseq_dt = fread(paste0('/DATA/projects/DSBrepair/data/R/',
                          'cl20220517_corrected_broken_fraction_endseq.txt'))
+endseq_dt[, pathway:='broken']
+endseq_dt[, ssODN:=F]
 
 endseq_clone5 = fread(paste0('/DATA/projects/DSBrepair/data/R/',
-                            'cl20220525_endseq_clone5_12h.txt'))
+                             'cl20220525_endseq_clone5_12h.txt'))
 
 rel_bc_count = pathway_dt[, list(count=sum(count)),
                           by=c('barcode', 'clone', 'bio', 'tech', 'condition',
@@ -164,62 +295,126 @@ rel_bc_count[, mean_diff := rel_broken-mean(rel_broken),
 pathway_sd = pathway_dt[time <= 48 & condition=='M3814',
                         list('sd_pathway'=sd(mean_diff)),
                         by='clone']
-relative_sd = rel_bc_count[time <= 30 & condition=='M3814',
+relative_sd = rel_bc_count[time <= 48 & condition=='M3814',
                            list('sd_relative'=sd(mean_diff)),
                            by='clone']
 
 pathway_sd = pathway_dt[time <= 48 & condition=='M3814' & ssODN==T,
-                       list('sd_pathway'=sd(mean_diff)),
-                       by='barcode']
-relative_sd = rel_bc_count[time <= 30 & condition=='M3814' & ssODN==T,
-                          list('sd_relative'=sd(mean_diff)),
-                          by='barcode']
+                        list('sd_pathway'=sd(mean_diff)),
+                        by='barcode']
+relative_sd = rel_bc_count[time <= 48 & condition=='M3814' & ssODN==T,
+                           list('sd_relative'=sd(mean_diff)),
+                           by='barcode']
+```
 
-sd_merge = merge(pathway_sd, relative_sd, by='barcode')
-sd_merge[,scaling_factor := sd_pathway/sd_relative]
+### Kinetic Rates
+```{r}
+path = "/DATA/projects/DSBrepair/data/python/"
 
-
-
-pathway_sd = pathway_dt[time <= 48, sd(mean_diff)]
-relative_sd = rel_bc_count[time <= 30, sd(mean_diff)]
-
-print(pathway_sd/relative_sd)
-
-pathway_sd = pathway_dt[time <= 48 & condition=='M3814', sd(mean_diff)]
-relative_sd = rel_bc_count[time <= 30 & condition=='M3814', sd(mean_diff)]
-
-print(pathway_sd/relative_sd)
-
-pathway_sd = pathway_dt[time <= 48 & condition=='DMSO', sd(mean_diff)]
-relative_sd = rel_bc_count[time <= 30 & condition=='DMSO', sd(mean_diff)]
-
-print(pathway_sd/relative_sd)
-kable(sd_merge)
-
-sd_merge[, group:=domain_dt[barcode,'group']]
+singlebc_dt = fread(paste0(path, 'cl20220627_timeseries_fit_endseq_1es_max5_73set_endseq_conditions.txt'))
+singlebc_dt[, start:='single_bc']
 
 
+rates_singlebc_dt = fread(paste0(path, 'cl20220627_rate_constants_endseq_1es_73set_endseq_conditions.txt'))
+rates_singlebc_dt[, start:='single_bc']
 
 
-main_sd_merge = sd_merge[group%in%main_groups, ]
-main_sd_merge[, group:=factor(group, levels=main_groups)]
+step1of3_dt = fread(paste0(path, 'cl20220622_timeseries_fit_step1of4_0.24_48h_59set.txt'))
+step1of3_dt[, start:='step1of3_59set']
 
 
-map_clones = read_table("/DATA/projects/DSBrepair/data/cl20220321_cured_mapping_clones.txt", col_names = c("chr", "start", "barcode", "clone")) %>%
-  filter(chr != "chrY") %>%
-  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
-                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
-                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
-                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
-                                      "chr22", "chrX")))
-  
-chromsizes = read_table("/DATA/projects/DSBrepair/data/rs20220602_chromsizes_hg38_UCSC.txt", col_names = T) %>% 
-  mutate(chr = factor(chr, levels = c("chr1", "chr2", "chr3", "chr4", "chr5", 
-                                      "chr6", "chr7", "chr8", "chr9", "chr10", 
-                                      "chr11", "chr12", "chr13", "chr14", "chr15", 
-                                      "chr16", "chr17", "chr18", "chr19", "chr20", 
-                                      "chr22", "chrX")))
+rates_step1of3_dt = fread(paste0(path, 'cl20220622_rate_constants_step1of4_0.24_48h_59set.txt'))
+rates_step1of3_dt[, start:='step1of3_59set']
 
+
+step1of2_dt = fread(paste0(path, 'cl20220622_timeseries_fit_step1of2_rel48_59set.txt'))
+step1of2_dt[, start:='step1of2_59set']
+
+
+rates_step1of2_dt = fread(paste0(path, 'cl20220622_rate_constants_step1of2_rel48_59set.txt'))
+rates_step1of2_dt[, start:='step1of2_59set']
+
+step2of2_59_dt = fread(paste0(path, 'cl20220623_timeseries_fit_step2of2_relative48_59set.txt'))
+step2of2_59_dt[, start:='step2of2_59set']
+
+rates_step2of2_59_dt = fread(paste0(path, 'cl20220623_rate_constants_step2of2_relative48_59set.txt'))
+rates_step2of2_59_dt[, start:='step2of2_59set']
+
+step2of3_59_dt = fread(paste0(path, 'cl20220623_timeseries_fit_step2of3_rel48_59set.txt'))
+step2of3_59_dt[, start:='step2of3_59set']
+
+rates_step2of3_59_dt = fread(paste0(path, 'cl20220623_rate_constants_step2of3_rel48_59set.txt'))
+rates_step2of3_59_dt[, start:='step2of3_59set']
+
+
+step3of3_59_dt = fread(paste0(path, 'cl20220627_timeseries_fit_step3of3_rel48_59set.txt'))
+step3of3_59_dt[, start:='step3of3_59set']
+
+rates_step3of3_59_dt = fread(paste0(path, 'cl20220627_rate_constants_step3of3_rel48_59set.txt'))
+rates_step3of3_59_dt[, start:='step3of3_59set']
+
+step3of3_59_SSTR_dt = fread(paste0(path, 'cl20220627_timeseries_fit_step3of3_rel48_59set_SSTRperfect.txt'))
+step3of3_59_SSTR_dt[, start:='step3of3_59set_SSTRperfect']
+
+rates_step3of3_59_SSTR_dt = fread(paste0(path, 'cl20220627_rate_constants_step3of3_rel48_59set_SSTRperfect.txt'))
+rates_step3of3_59_SSTR_dt[, start:='step3of3_59set_SSTRperfect']
+
+# cl20220613_timeseries_fit_clones_step3of4_M3814_73set_48h.txt
+# cl20220613_rate_constants_clones_step3of4_M3814_73set_48h.txt
+
+full_dt = rbind(step2of3_59_dt[ssODN==T & clone!='RSTP2_3', ],
+                step1of2_dt[clone!='RSTP2_3', ],
+                step3of3_59_dt[clone!='RSTP2_3', ])
+rates_full_dt = rbind(rates_step2of3_59_dt[ssODN==T & clone!='RSTP2_3', ],
+                      rates_step1of2_dt[clone!='RSTP2_3', ],
+                      rates_step3of3_59_dt[clone!='RSTP2_3', ])
+full_dt[, step:=ifelse(start=='step1of2_59set', '1step', '3step')]
+rates_full_dt[, step:=ifelse(start=='step1of2_59set', '1step', '3step')]
+
+# full_dt = rbind(bflow_dt, ssODN2c_dt, ssODN1e_dt, ssODN2b_dt)
+# rates_full_dt = rbind(rates_bflow_dt, rates_ssODN2c_dt, rates_ssODN2a_dt,
+#                       rates_ssODN2b_dt)
+#
+# full_dt = rbind(ssODN_dt, SSE_dt)
+#
+# full_dt = rbind(bflow_dt, ssODN_dt, ssODN2a_dt, ssODN2b_dt, step3_dt, step4_dt,
+#                 step3b_dt, step4b_dt)
+
+# full_dt = rbind(bflow_dt, ssODN_dt, ssODN2a_dt, ssODN2b_dt, step3_dt, step4_dt)
+
+
+full_dt[, group:=domain_dt[barcode,'group']]
+full_dt[is.na(group), group:='unmarked']
+
+
+#
+# rates_full_dt = rbind(rates_ssODN_dt,
+#                       rates_SSE_dt)
+#
+# rates_full_dt = rbind(rates_bflow_dt, rates_ssODN_dt, rates_ssODN2a_dt,
+#                       rates_ssODN2b_dt, rates_step3_dt, rates_step4_dt,
+#                       rates_step3b_dt, rates_step4b_dt)
+#
+# rates_full_dt = rbind(rates_bflow_dt, rates_ssODN_dt, rates_ssODN2a_dt,
+#                       rates_ssODN2b_dt, rates_step3_dt, rates_step4_dt)
+rates_full_dt[, group:=domain_dt[barcode,'group']]
+rates_full_dt[is.na(group), group:='unmarked']
+rates_full_dt[, constant:=factor(constant,
+                                 levels=c('kc_cut', 'kr_perfect', 'kr_ins',
+                                          'kr_MMEJ_min', 'kr_MMEJ_max', 'kr_MMEJ',
+                                          'kr_nonMMEJ', 'kr_SSTR'))]
+
+full_dt[, not_broken := 1-broken]
+full_dt[, rel_broken := not_broken/sum(not_broken) * length(not_broken),
+        by=c('clone', 'pool', 'bio', 'condition', 'ssODN', 'time', 'start')]
+
+full_melt = data.table::melt(full_dt, measure.vars=c('ins', 'MMEJ', 'nonMMEJ_del',
+                                                     'broken', 'wt', 'SSTR'),
+                             variable.name='pathway', value.name='ratio')
+
+full_melt[, real_ratio:= ifelse(pathway=='broken', ratio, ratio * not_broken),
+          by=c('barcode', 'clone', 'pool', 'bio', 'condition', 'ssODN',
+               'time', 'start')]
 ```
 
 
@@ -228,7 +423,41 @@ chromsizes = read_table("/DATA/projects/DSBrepair/data/rs20220602_chromsizes_hg3
 
 ```
 
+
+### Loess fits
 ```{r}
+rel_bc_count = simple_dt[barcode!='ATCTCATCTTATTTCC', list(count=sum(count)),
+                          by=c('barcode', 'clone', 'bio', 'tech', 'condition',
+                               'time', 'ssODN', 'used')]
+
+rel_bc_count[, rel:=count/sum(count),
+             by=c('clone', 'bio', 'tech', 'condition', 'time', 'ssODN')]
+
+rel_bc_count[, rel_broken:=rel/rel[time==0],
+             by=c('barcode', 'clone', 'bio', 'tech', 'condition', 'ssODN')]
+
+rel_bc_count[, rel_count:=rel * length(unique(barcode)),
+             by=c('clone', 'bio', 'tech', 'condition', 'ssODN')]
+
+
+rel_bc_med = rel_bc_count[, list(rel_measured = median(rel_broken),
+                                 rel_count = median(rel_count)),
+                          by=c('barcode', 'clone', 'condition',
+                               'ssODN', 'time')]
+fit_loess <- function(dt){
+    time = 0:48
+    fit = loess(rel_measured ~ time, data=dt)
+    print(fit)
+    p = predict(fit, time)
+    return(list(time=time, loess=p))
+}
+
+
+loess_dt = rel_bc_med[time <= 48, fit_loess(.SD),
+                        by=c('barcode', 'clone', 'condition', 'ssODN')]
+loess_dt[,group:=domain_dt[barcode, 'group']]
+setkey(clone_dt, 'barcode')
+loess_dt[,seqnames:=clone_dt[barcode, 'seqnames']]
 ```
 
 # Main Figure 1
@@ -258,26 +487,41 @@ chromsizes = read_table("/DATA/projects/DSBrepair/data/rs20220602_chromsizes_hg3
 *(b)* 
 
 
- 
+
 
 # Supplementary Figure 1
 
 ## Panel S1A
-```{r FigS1A chromideograms, fig.height=11, fig.width=6}
+```{r FigS1A chromideograms, fig.height=11, fig.width=4}
+# remove clone 3 as it is wonky, in cell culture and in the indel data.
+map_clones_no3 = map_clones %>% filter(clone != "RSTP2_3")
+
 p = ggplot() +
-  geom_segment(data = chromsizes,
-               aes(x = chr, xend = chr, y = 0, yend = start),
+  geom_segment(data = chrom_sizes,
+               aes(x = chr, xend = chr, y = 0, yend = cen_start),
+               lineend = "round", color = "lightgrey", size = 7) +
+  geom_segment(data = chrom_sizes,
+               aes(x = chr, xend = chr, y = cen_end, yend = start),
                lineend = "round", color = "lightgrey", size = 7) +
   geom_segment(data = map_clones,
                aes(x = as.integer(chr) - 0.3, xend = as.integer(chr) + 0.3,
                    y = start, yend = start, color = clone),
-               size = .8) +
-  theme_classic(base_size = 16) +
-  scale_color_manual(values = c("RSTP2_1" = '#014040', "RSTP2_3" = '#02735E',"RSTP2_5" = '#03A678',
-                     "RSTP2_9" = '#ffad07',"RSTP2_12" = '#f27005',"RSTP2_15" = '#ce3800',"RSTP2_16" = '#731702')) + 
-  xlab("Chromosome")
+               size = 3) +
+  geom_segment(data = chrom_sizes,
+               aes(x = as.integer(chr) - 0.2, xend = as.integer(chr) + 0.2,
+                   y = cen_start, yend = cen_start),
+               size = 2) +
+  geom_segment(data = chrom_sizes,
+               aes(x = as.integer(chr) - 0.2, xend = as.integer(chr) + 0.2,
+                   y = cen_end, yend = cen_end),
+               size = 2) +
+  theme_classic() +
+  scale_color_manual(values = col_set_6_clones) +
+  xlab("Chromosome") + 
+  ylab("Position [Mb]") +
+  coord_flip()
 
-pdf('/DATA/projects/DSBrepair/scratch/rs20220602_mapping.pdf', width=10, height=8)
+pdf('/DATA/projects/DSBrepair/git/DSB_TRIP_Kinetics/figures/rs20220729_mapping_6_clones.pdf', width=6, height=8)
 print(p)
 dev.off()
 ```
@@ -287,23 +531,40 @@ dev.off()
 ## Panel S1B
 <!-- start Christ -->
 ```{r FigS1B clone5 heatmap Christ, fig.height=6, fig.width=8}
-clones_barcodes = pull(pathway_dt, barcode) %>% unique()
+clones_barcodes = pathway_dt %>%
+  filter(clone != "RSTP2_3") %>%
+  pull(barcode) %>% unique()
 
-chip.matrix = chip_dt %>% filter(ID %in% clones_barcodes) %>% column_to_rownames(., var = "ID") %>% t()
+chip.matrix = chip_LMNB1_dt %>% filter(ID %in% clones_barcodes) %>% column_to_rownames(., var = "ID") %>% t()
 
-clones_domains.df = as.data.frame(domain_dt[, c("barcode", "group")]) %>% filter(barcode %in% clones_barcodes)
+clones_domains.df = as.data.frame(domain_dt[, c("barcode", "group2")]) %>% filter(barcode %in% clones_barcodes)
 colnames(clones_domains.df) = c("ID", "group")
+
+clones_domains.df = merge(clones_domains.df, bc_clones, by.x="ID", by.y="barcode")
 
 clones_domains.df$IPR = paste0("IPR", seq(1:dim(clones_domains.df)[1]))
 rownames(clones_domains.df) = clones_domains.df$IPR
 
-chip_clones = chip_dt[clones_domains.df, on = c("ID")]
+chip_clones = chip_LMNB1_dt[clones_domains.df, ]
 
+clones_domains_annotation = clones_domains.df[, c("group", "clone")]
+colnames(clones_domains_annotation) = c("domain", "clone")
 
 clones_domains.df = clones_domains.df[, "group", drop = FALSE]
-colnames(clones_domains.df) = "domain"
 
-clustering = data.frame(row.names=c(#'LMNB1', 'late_replicating', 
+
+
+
+
+
+
+bc_clones = unique(pathway_dt[ , c("barcode", "clone")]) %>%
+  filter(clone != "RSTP2_3")
+
+
+
+clustering = data.frame(row.names=c('LMNB1', 
+                                    # 'late_replicating', 
                                     'H3K9me2', 'H3K9me3',
                                     'H3K27me3', 'EZH2', 
                                     'CTCF', 'SMC3',
@@ -316,21 +577,18 @@ clustering = data.frame(row.names=c(#'LMNB1', 'late_replicating',
                                     'H3K36me3', 'POL2AS2',
                                     'POL2'),
                         group=factor(c(#rep('repressive', 6), 
-                                       rep('repressive', 4), 
-                                       rep('insulator', 2),
-                                       rep('HDAC', 3), 
-                                       rep('euchromatin', 6),
-                                       # rep('accessibility', 2), 'methylation',
-                                       # rep('transcribing', 5),
-                                       rep('transcribing', 4)),
-                                     levels=c('transcribing', 'accessibility',
-                                              'methylation', 'euchromatin',
-                                              'HDAC', 'insulator', 'repressive')))
-feature_fill = c(insulator="#a6b5a3", repressive="#304441", euchromatin="#cda4cc",
-                 transcribing="#FBB040", HDAC="#aac9e0", accessibility='#cebc85',
-                 methylation='#7dc98f')
+                          rep('repressive', 5), 
+                          rep('insulator', 2),
+                          rep('HDAC', 3), 
+                          rep('euchromatin', 6),
+                          # rep('accessibility', 2), 'methylation',
+                          # rep('transcribing', 5),
+                          rep('transcribing', 4)),
+                          levels=c('transcribing', 'accessibility',
+                                   'methylation', 'euchromatin',
+                                   'HDAC', 'insulator', 'repressive')))
 
-chom_df = chip_clones %>% column_to_rownames("IPR") %>% select(-group, -ID) %>% t()
+chom_df = chip_clones %>% column_to_rownames("IPR") %>% select(-group, -ID, -clone) %>% t()
 
 order_vec=rownames(clustering)[nrow(clustering):1]
 
@@ -340,7 +598,7 @@ palette_length <- 100
 max_quant = max(abs(quant_breaks[1]), abs(quant_breaks[2]))
 
 breaks.chip <- c(seq(-quant_breaks[2], 0, length.out=ceiling(palette_length/2) + 1), 
-            seq(quant_breaks[2]/palette_length, quant_breaks[2], length.out=floor(palette_length/2)))
+                 seq(quant_breaks[2]/palette_length, quant_breaks[2], length.out=floor(palette_length/2)))
 
 
 colors = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(palette_length)
@@ -354,11 +612,18 @@ colors = colorRampPalette(rev(brewer.pal(n = 11, name="RdBu")))(palette_length)
 
 pheatmap(chom_df, color = colors, breaks = breaks.chip, annotation_row=clustering)
 
-pdf('/DATA/projects/DSBrepair/scratch/rs20220602_heatmap.pdf', width=14, height=8)
-pheatmap(chom_df, annotation_row=clustering,
-         annotation_colors=list(domain=group_colors, group=feature_fill),
-         color = colors, breaks = breaks.chip,
-         annotation_col = clones_domains.df)
+pdf('/DATA/projects/DSBrepair/git/DSB_TRIP_Kinetics/figures/rs20220729_heatmap.pdf', width=14, height=8)
+pheatmap(chom_df, 
+         border_color = F,
+         cellwidth = 8,
+         cellheight = 8,
+         na_col = "white",
+         clustering_method = "ward.D2",
+         annotation_colors=col_group_clones,
+         color = colors, 
+         breaks = breaks.chip,
+         annotation_row = clustering,
+         annotation_col = clones_domains_annotation)
 dev.off()
 
 ```
@@ -369,6 +634,32 @@ dev.off()
 ## Panel S1C
 ```{r FigS1C all indels, fig.height=5, fig.width=12}
 
+```
+
+
+```{r}
+loessmatrix = loess_dt %>% pivot_wider(values_from = loess, names_from = time) %>% filter(condition == "M3814" & ssODN, clone == "RSTP2_5") %>%
+  dplyr::select(-condition, -ssODN, -clone, -seqnames, -group) %>% column_to_rownames(var = "barcode")
+
+rel_bc_count
+
+loessmatrix = rel_bc_count  %>%
+  filter(condition == "M3814" & ssODN, clone == "RSTP2_5" & time < 50) %>%
+  arrange(time) %>%
+  dplyr::select(-condition, -ssODN, -clone, -rel_broken, -rel_count, -count, -used) %>% 
+  pivot_wider(values_from = rel, names_from = time) 
+
+for(i in 1:3) {
+  for(j in unique(loessmatrix$tech)) {
+    mat = loessmatrix %>% 
+      filter(bio == 1, tech == j) %>%
+      dplyr::select(-bio, -tech) %>%
+      column_to_rownames(var = "barcode")
+    pheatmap(mat,
+             main = paste("Rel counts clone 5 bio", i, "tech", j, sep = " "),
+             cluster_cols = F)
+  }
+}
 ```
 
 
@@ -384,17 +675,20 @@ pathway_dt[bio=='E1626', bio:=3]
 sd_dt = pathway_dt[, list(sd=sd(ratio)),
                    by=c('pathway', 'ssODN', 'pool', 'barcode','bio','condition','time')]
 
-sd_dt %<>% replace_na(list(sd = 0))
+sd_dt %<>% replace_na(list(sd = 0)) %>% mutate(filter = ifelse((ssODN == FALSE & pathway == "SSTR"), FALSE, TRUE)) %>% filter(filter == TRUE)
 
-pdf('/DATA/projects/DSBrepair/scratch/rs20220603_sd_tech_rep.pdf', useDingbats=F, width=5, height=10)
-ggplot(sd_dt,
+
+p = ggplot(sd_dt,
            aes(x=time, y=sd, color=pathway)) +
-           geom_point() +
-           geom_smooth(se=F) +
-           geom_vline(xintercept=48) +
-           theme_bw() +
-           scale_color_manual(values=DNA_color) +
-           facet_nested(rows=vars(ssODN, condition))
+  rasterise(geom_point(size = 0.1, alpha = 0.2), dpi = 300, scale = 1) +
+  geom_smooth(se=F, size = 2) +
+  geom_vline(xintercept=48) +
+  theme_bw() +
+  scale_color_manual(values=DNA_color) +
+  facet_nested(rows=vars(ssODN, condition))
+
+pdf('/DATA/projects/DSBrepair/scratch/rs20220603_sd_tech_rep_jitter.pdf', useDingbats=F, width=5, height=10)
+print(p)
 dev.off()
 ```
 
@@ -407,7 +701,8 @@ dev.off()
 pathway_pairs = pathway_dt %>% 
   group_by(barcode, time, condition, pathway, bio, ssODN, clone) %>% 
   distinct(ratio, barcode, time, condition, pathway, bio, ssODN, clone) %>%
-  summarise(av.ratio = sum(ratio)/4) %>% 
+  summarise(
+    av.ratio = sum(ratio)/4) %>% 
   dplyr::distinct() %>%  
   pivot_wider(., names_from = bio, values_from = av.ratio) %>%
   mutate_all(~replace(., is.na(.), 0)) %>%
@@ -420,20 +715,20 @@ for (i in unique(pathway_pairs$condition)) {
     d = pathway_pairs %>% 
       filter(condition == i & time < 50 & pathway != "SSTR")
     p = ggpairs(d, columns = 6:8, ggplot2::aes(colour=pathway), title = i) + 
-            scale_fill_manual("legend", values = DNA_color) +
-            scale_color_manual("legend", values = DNA_color) +
-            theme_bw(base_size = 16)
+      scale_fill_manual("legend", values = DNA_color) +
+      scale_color_manual("legend", values = DNA_color) +
+      theme_bw(base_size = 16)
     print(p)
     # p.rast = rasterize(p, layers='Point', dpi=300)
     # print(p.rast)
-
+    
   } else {
     d.sstr = pathway_pairs %>% 
       filter(condition == i & time < 50)
     p = ggpairs(d.sstr, columns = 6:8, ggplot2::aes(colour=pathway), title = i) + 
-            scale_fill_manual("legend", values = DNA_color) +
-            scale_color_manual("legend", values = DNA_color)+
-            theme_bw(base_size = 16)
+      scale_fill_manual("legend", values = DNA_color) +
+      scale_color_manual("legend", values = DNA_color)+
+      theme_bw(base_size = 16)
     print(p)
     # p.rast = rasterize(p, layers='Point', dpi=300)
     # print(p.rast)

@@ -1,0 +1,122 @@
+I need an hypothetical barcode to show how the model works.
+
+```{r}
+library(ggplot2)
+library(data.table)
+library(ggh4x)
+
+update_geom_defaults("point", list(stroke = NA))
+
+theme_set(theme_bw(16))
+
+
+DNA_color = c('MMEJ'="#414691", 'ins'="#d3422e", 'wt'="#000000", 'broken'='grey50',
+              'nonMMEJ_del'="#8BA6A5", 'SSTR'="#A9AB2E", 'mut'='#7BA68E',
+              'active_MMEJ'='#414691', 'mut_active'='#414691', 'cas9'='#A9AB2E')
+
+k_color = c('kc_cut'="#000000", 'kr_perfect'="#BBABB1", 'kr_ins'="#d3422e",
+            'kr_MMEJ_min'="#414691", 'kr_MMEJ_max'="#414691", 'kr_MMEJ'="#414691",
+            'kr_nonMMEJ'="#8BA6A5", 'kr_SSTR'="#A9AB2E", 'kr_mut'='#7BA68E')
+
+condition_color = c('DMSO'='#000000', 'M3814'='#d0d0d0', 'shared'='#858585')
+ssODN_color = c('FALSE'='#000000', 'TRUE'='#A9AB2E')
+
+group_colors=c('late_replicating-LAD-H3K9me2'='#4477AA',
+               "H3K9me2"='#6D92A2',
+               "late_replicating-LAD-H3K9me2-H3K27me3"='#6D92A2',
+               "LAD-H3K9me2-H3K27me3"='#6D92A2',
+               "LAD-H3K9me2"='#6D92A2',
+               "late_replicating"='#6D92A2',
+               "late_replicating-H3K9me2"='#6D92A2',
+               "H3K9me2-H3K27me3"='#6D92A2',
+               'H3K27me3'='#66CCEE',
+               'transcription'='#228833',
+               'euchromatin-transcription'='#CCBB44',
+               "transcription-late_replicating-LAD-H3K9me2"="#37868A",
+               "euchromatin-H3K9me2"="#74555F",
+               "euchromatin-transcription-late_replicating"="#74555F",
+               'euchromatin'='#EE6677',
+               "transcription-LAD-H3K9me2"="#37868A",
+               'unmarked'='#BBBBBB')
+
+
+group2_colors=c('euchromatin'='#EE6677',
+                'transcription'='#228833',
+                "mixed_chromatin"="#74555F",
+                'unmarked'='#BBBBBB',
+                "other_heterochromatin"='#6D92A2',
+                'H3K27me3'='#66CCEE',
+                'triple_heterochromatin'='#4477AA')
+
+main_groups2 = c("euchromatin", 'transcription', 'unmarked',
+                 'H3K27me3', "triple_heterochromatin")
+main_group2_colors=group2_colors[main_groups2]
+
+main_groups = c('euchromatin', 'transcription',
+                'unmarked', 'H3K27me3', 'late_replicating-LAD-H3K9me2')
+main_group_colors=group_colors[main_groups]
+
+clone_colors = c("RSTP2_1"='#014040', "RSTP2_3"='#02735E', "RSTP2_5"='#03A678',
+                 "RSTP2_9"='#ffad07',"RSTP2_12"='#f27005',"RSTP2_15"='#ce3800',
+                 "RSTP2_16"='#731702')
+
+clone_dt = fread('/DATA/projects/DSBrepair/data/cl20220321_cured_mapping_clones.txt',
+                 col.names=c('seqnames', 'pos', 'barcode', 'clone'))
+
+chip_dt = fread('../results/R/cl20220322_zscores_chip_clone_set.txt')
+
+setkey(clone_dt, 'barcode')
+
+domain_dt = readRDS('../data/R/cl20220322_clones_chip_domains.RDS')
+
+domain_dt[,group2:=group]
+domain_dt[group=='euchromatin-transcription', group2:='euchromatin']
+
+domain_dt[grepl('transcription', group2) & group!='transcription',
+          group2:='mixed_chromatin']
+
+domain_dt[grepl('euchromatin', group2) & group2!='euchromatin',
+          group2:='mixed_chromatin']
+
+domain_dt[group%in%c('late_replicating-LAD-H3K9me2',
+                     'late_replicating-LAD-H3K9me2-H3K27me3'),
+          group2:='triple_heterochromatin']
+
+domain_dt[grep('H3K27me3', group2), group2:='H3K27me3']
+domain_dt[!group2%in%names(group2_colors), group2:='other_heterochromatin']
+
+
+pathway_dt = fread('/DATA/projects/DSBrepair/data/R/cl20220622_timeseries_pools_59set.txt')
+pathway_dt[, used:=ifelse(time<50, 1, 0.3)]
+
+pathway_cast = data.table::dcast(data = pathway_dt[clone!='RSTP2_3', ],
+                                 formula = barcode + condition + time + ssODN +
+                                           bio ~ pathway,
+                                 value.var="count", fun.aggregate=sum)
+pathway_melt = melt(pathway_cast,
+                    measure.vars=c('MMEJ', 'SSTR', 'ins',
+                                   'nonMMEJ_del', 'wt'),
+                    variable.name='pathway', value.name='count')
+
+pathway_melt[,ratio:=count/sum(count),
+             by=c('barcode', 'condition', 'time', 'ssODN', 'bio')]
+
+AGGGAAGAAGCTCGAA
+TCTTTTGAGGAGCTGA
+
+avg_pathway = pathway_melt[, list(ratio=mean(ratio)),
+                          by=c('bio', 'condition', 'time', 'pathway', 'ssODN')]
+
+pdf('/DATA/projects/DSBrepair/git/DSB_TRIP_Kinetics/figures/rs20220729_2bcs_pathway_measures.pdf', width=12, height=5)
+pathway_melt %>% filter(barcode %in% c("AGGGCGTAAAATATTT", "TCTTTTGAGGAGCTGA") & time < 50) %>%
+ggplot(.,
+       aes(x=time, y=ratio, color=pathway, shape=as.character(bio))) +
+    geom_point() +
+    geom_smooth(se=F, linewidth=0.5) +
+    scale_color_manual(values=DNA_color) +
+    facet_nested(cols=vars(ssODN, condition),
+                 rows = vars(barcode))
+dev.off()
+
+
+```
